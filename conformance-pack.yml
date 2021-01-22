@@ -1,0 +1,57 @@
+Resources:
+  S3EnforeVersioningCheck:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: ccapp-s3-enforce-versioning
+      Descrtiption: "A sample config rule evaluating the compliance of an S3 bucket"
+      InputParameters:
+        MasterAccountID: "[[ Replace with AWS Master Account ]]"
+        ComplianceCommand: "S3_ENABLE_VERSIONING"
+      Scope:
+        ComplianceResourceTypes:
+          - "AWS::S3::Bucket"
+      Source:
+        Owner: "CUSTOM_LAMBDA"
+        SourceDetails:
+          -
+            EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+            MaximumExecutionFrequency: "One_Hour"
+          -
+            EventSource: "aws.config"
+            MessageType: "ConfigurationItemChangeNotification"
+          -
+            EventSource: "aws.config"
+            MessageType: "OversizedConfigurationItemChangeNotification"
+        SourceIdentifier: "arn:aws:lambda:us-east-1:[[ Replace with AWS Master Account ]]:function:compliance-generic-rule"
+  S3EnforeVersioningRemediation:
+    DependsOn: S3EnforeVersioningCheck
+    Type: 'AWS::Config::RemediationConfiguration'
+    Properties:
+      ConfigRuleName: ccapp-s3-enforce-versioning
+      ResourceType: "AWS::S3::Bucket"
+      TargetId: "arn:aws:ssm:us-east-1:[[ Replace with AWS Master Account ]]:document/compliance-generic-remediation-doc"
+      TargetType: "SSM_DOCUMENT"
+      Parameters:
+        ResourceID:
+          ResourceValue:
+            Value: "RESOURCE_ID"
+        ComplianceCommand:
+          StaticValue:
+            Values:
+              - "S3_ENABLE_VERSIONING"
+        AutomationAssumeRole:
+          StaticValue:
+            Values:
+              - arn:aws:iam::[[ Replace with AWS Master Account ]]:role/role-compliance-ssm-automation
+        MasterAccountID:
+          StaticValue:
+            Values:
+              - "[[ Replace with AWS Master Account ]]"
+      ExecutionControls:
+        SsmControls:
+          ConcurrentExecutionRatePercentage: 10
+          ErrorPercentage: 10
+      Automatic: True
+      MaximumAutomaticAttempts: 10
+      RetryAttemptSeconds: 600

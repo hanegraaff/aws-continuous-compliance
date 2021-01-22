@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  MasterAccountID:
+    Type: String
+    Description: >-
+      Enter the account ID of the master account that hosts the compliance
+      software.
+Resources:
+  LambdaGenericRemediationExecRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+              AWS:
+                - !Sub >-
+                  arn:aws:iam::${MasterAccountID}:role/role-compliance-generic-remediation
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/PowerUserAccess'
+      RoleName: role-compliance-generic-remediation-assumed
+      Tags:
+        - Key: Description
+          Value: The execution role used by Generic Remediation Lambda function.
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 22ff896b-6b0c-488f-951d-3e33124e4411
+  LambdaGenericRuleExecRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+              AWS:
+                - !Sub >-
+                  arn:aws:iam::${MasterAccountID}:role/role-compliance-generic-rule
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/PowerUserAccess'
+      RoleName: role-compliance-generic-rule-assumed
+      Tags:
+        - Key: Description
+          Value: The execution role used by Generic Rule Lambda function.
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 7fdf162d-31d9-4d15-9bb6-0f0e32db5e69
+  SSMAutomationRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ssm.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      RoleName: role-compliance-ssm-automation
+      Tags:
+        - Key: Description
+          Value: The Assume role used by the remediation SSM Document.
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 35ee4d6c-ccb6-4254-9287-355988b61f3b
+  SSMAutomationRolePolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'lambda:InvokeFunction'
+            Resource:
+              - 'arn:aws:lambda:*:*:function:compliance*'
+      PolicyName: compliance-automation-policy
+      Roles:
+        - !Ref SSMAutomationRole
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 19a11423-d8b0-4307-bf6b-7165d5377e15
+Metadata:
+  'AWS::CloudFormation::Designer':
+    35ee4d6c-ccb6-4254-9287-355988b61f3b:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 300
+        'y': 210
+      z: 1
+      embeds: []
+    19a11423-d8b0-4307-bf6b-7165d5377e15:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 300
+        'y': 100
+      z: 1
+      embeds: []
+      isassociatedwith:
+        - 35ee4d6c-ccb6-4254-9287-355988b61f3b
+    7fdf162d-31d9-4d15-9bb6-0f0e32db5e69:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 60
+        'y': 210
+      z: 1
+      embeds: []
+    22ff896b-6b0c-488f-951d-3e33124e4411:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 180
+        'y': 210
+      z: 1
+      embeds: []

@@ -1,0 +1,332 @@
+AWSTemplateFormatVersion: 2010-09-09
+Resources:
+  LambdaGenericRuleExecRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+              AWS:
+                - '*'
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/PowerUserAccess'
+      RoleName: role-compliance-generic-rule
+      Policies:
+        - PolicyName: assumeLambdaExecutionRolePolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'sts:AssumeRole'
+                Resource: 'arn:aws:iam::*:role/role-compliance-generic-rule'
+      Tags:
+        - Key: Description
+          Value: The execution role used by Generic Rule Lambda function.
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 544bcbdd-8d31-42b4-8018-07a8752bba57
+  LambdaGenericRemediationExecRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+              AWS:
+                - '*'
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/PowerUserAccess'
+      RoleName: role-compliance-generic-remediation
+      Policies:
+        - PolicyName: assumeSSMAutomationRolePolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'sts:AssumeRole'
+                Resource: 'arn:aws:iam::*:role/role-compliance-generic-remediation'
+      Tags:
+        - Key: Description
+          Value: The execution role used by Generic Remediation Lambda function.
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 7a85fb91-ee6d-40c8-8c71-b3cecdad6207
+  SSMAutomationRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ssm.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      RoleName: role-compliance-ssm-automation
+      Tags:
+        - Key: Description
+          Value: The Assume role used by the remediation SSM Document.
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 6a34aef6-34a2-4967-a320-482c569553bb
+  GenericRuleFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: lambda_functions.generic_config_rule_handler.evaluate_compliance
+      Runtime: python3.7
+      FunctionName: compliance-generic-rule
+      Role: !GetAtt 
+        - LambdaGenericRuleExecRole
+        - Arn
+      Tags:
+        - Key: Description
+          Value: >-
+            Generic Lambda function capable of implementing various Config
+            rules.
+      Code:
+        ZipFile: |
+          def evaluate_compliance(event, context):
+            print(event)
+      Timeout: 900
+            
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: cfc0c15a-2623-4d75-8a4b-d3fe6d69dab3
+  ConfigFunctionPermissions:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt 
+        - GenericRuleFunction
+        - Arn
+      Principal: config.amazonaws.com
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 9b729621-cec9-48de-8457-f129c585292f
+  GenericRemediationFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: lambda_functions.simple_remediation_handler.remediate_resource
+      Role: !GetAtt 
+        - LambdaGenericRemediationExecRole
+        - Arn
+      Runtime: python3.7
+      FunctionName: compliance-generic-remediation
+      Tags:
+        - Key: Description
+          Value: Generic Lambda function capable of performing remediations.
+      Code:
+        ZipFile: |
+          def remediate_resource(event, context):
+              print(event)
+      Timeout: 300
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 73e3a67d-80ce-4526-a336-2e1b8cef450d
+  SSMAutomationRolePolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'lambda:InvokeFunction'
+            Resource:
+              - 'arn:aws:lambda:*:*:function:compliance*'
+      PolicyName: compliance-automation-policy
+      Roles:
+        - !Ref SSMAutomationRole
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 464d8049-5262-4258-b150-324432780f50
+  GenericRemediationDocument:
+    Type: 'AWS::SSM::Document'
+    Properties:
+      Content:
+        description: >-
+          Generic Document capable of remediation multiple resources and
+          compliance findings
+        schemaVersion: '0.3'
+        assumeRole: '{{ AutomationAssumeRole }}'
+        parameters:
+          ResourceID:
+            type: String
+            description: '{{ ResourceID }}'
+          AutomationAssumeRole:
+            type: String
+            description: The ARN of the SSM Automation role in the master account
+            default: ''
+          MasterAccountID:
+            type: String
+            description: The Master Account ID
+            default: ''
+          ComplianceCommand:
+            type: String
+            description: The name of the compliance command targeted for remediation
+            default: ''
+        mainSteps:
+          - name: invokeMyLambdaFunction
+            action: 'aws:invokeLambdaFunction'
+            maxAttempts: 3
+            timeoutSeconds: 120
+            onFailure: Abort
+            inputs:
+              FunctionName: !GetAtt 
+                - GenericRemediationFunction
+                - Arn
+              Payload: >-
+                {"resourceID":"{{ResourceID}}",
+                "remediationAccountID":"{{global:ACCOUNT_ID}}",
+                "complianceCommand":"{{ComplianceCommand}}"}
+      DocumentType: Automation
+      Name: compliance-generic-remediation-doc
+      Tags:
+        - Key: Description
+          Value: Generic remediation runbook.
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 045a3563-fcf7-46da-8da6-44ae3cf63bef
+  ApplicationBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'aws:kms'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Description
+          Value: S3 Bucket used for application code and configuration
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 3e9a17fd-b0f9-4ba6-8d39-1d85e9dc2507
+Outputs:
+  BucketName:
+    Description: The name of the app S3 bucket name
+    Value: !Ref ApplicationBucket
+  GenericConfigRuleFunctionARN:
+    Description: The ARN of the shared config rule function
+    Value: !GetAtt 
+      - GenericRuleFunction
+      - Arn
+  GenericConfigRuleLambdaFunctionName:
+    Description: The ARN of the shared config rule function
+    Value: !Ref GenericRuleFunction
+  GenericSSMRemediatorLambdaFunctionName:
+    Description: The ARN of the shared SSM Remediation lambda function name
+    Value: !Ref GenericRemediationFunction
+  SSMMasterAcctRoleArn:
+    Description: The ARN of SSM Assume role in the master account
+    Value: !GetAtt 
+      - SSMAutomationRole
+      - Arn
+  MasterAccountID:
+    Description: The AWS Account ID where the compliane software is installed
+    Value: !Ref 'AWS::AccountId'
+Metadata:
+  'AWS::CloudFormation::Designer':
+    6a34aef6-34a2-4967-a320-482c569553bb:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: -40
+        'y': 90
+      z: 1
+      embeds: []
+    7a85fb91-ee6d-40c8-8c71-b3cecdad6207:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 60
+        'y': 90
+      z: 1
+      embeds: []
+    73e3a67d-80ce-4526-a336-2e1b8cef450d:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 60
+        'y': 210
+      z: 1
+      embeds: []
+    544bcbdd-8d31-42b4-8018-07a8752bba57:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 170
+        'y': 90
+      z: 1
+      embeds: []
+    cfc0c15a-2623-4d75-8a4b-d3fe6d69dab3:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 170
+        'y': 210
+      z: 1
+      embeds: []
+    9b729621-cec9-48de-8457-f129c585292f:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 340
+        'y': 210
+      z: 1
+      embeds: []
+      isassociatedwith:
+        - cfc0c15a-2623-4d75-8a4b-d3fe6d69dab3
+    464d8049-5262-4258-b150-324432780f50:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: -140
+        'y': 90
+      z: 0
+      embeds: []
+      isassociatedwith:
+        - 6a34aef6-34a2-4967-a320-482c569553bb
+    045a3563-fcf7-46da-8da6-44ae3cf63bef:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: -40
+        'y': 210
+      z: 0
+      embeds: []
+    3e9a17fd-b0f9-4ba6-8d39-1d85e9dc2507:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: -140
+        'y': 210
+      z: 0
+      embeds: []
